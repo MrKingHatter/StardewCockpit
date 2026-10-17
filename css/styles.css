@@ -297,7 +297,7 @@ body.mode-cc .season-tab.active .pct { color: var(--accent); }
 .now-events-label { font-size: 10px; letter-spacing: 0.07em; text-transform: uppercase; color: var(--ink-faint); font-weight: 700; display: flex; align-items: center; gap: 4px; }
 .now-events-label img { width: 14px; height: 14px; image-rendering: pixelated; }
 /* NPC schedule briefs — permanent height, anchored right above the events section */
-.now-schedule-card { margin-top: auto; padding: 8px 0 6px; display: flex; flex-direction: column; gap: 4px; }
+.now-schedule-card { margin-top: auto; border-top: 1px solid var(--line-soft); padding: 8px 0 6px; display: flex; flex-direction: column; gap: 4px; }
 .now-schedule-label { font-size: 10px; letter-spacing: 0.07em; text-transform: uppercase; color: var(--ink-faint); font-weight: 700; display: flex; align-items: center; gap: 4px; }
 .now-schedule-label img { width: 14px; height: 14px; image-rendering: pixelated; }
 .now-schedule-lines { height: 80px; display: flex; flex-direction: column; gap: 3px; overflow: hidden; }
