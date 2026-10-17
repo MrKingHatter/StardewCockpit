@@ -1134,7 +1134,7 @@ function renderPredictorSearch() {
     } else {
       const season0 = SEASONS.indexOf(state.inGameDate.season);
       const curDp = Predictor.daysPlayed(state.inGameDate.year || 1, season0, state.inGameDate.day);
-      res.appendChild(h('span', { class: 'pred-search-result-text' }, `${r.detail}: ${fmtDateShort(r.dp)} · ${r.source}`));
+      res.appendChild(h('span', { class: 'pred-search-result-text' }, `${fmtDateShort(r.dp)} · ${r.source}`));
       if (r.dp !== curDp) res.appendChild(h('button', { class: 'btn pred-jump', on: { click: () => jumpToDp(r.dp) } }, 'Jump'));
       else res.appendChild(h('span', { class: 'pred-here' }, 'today'));
     }
