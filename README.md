@@ -5,7 +5,10 @@ built-in **1.6 travelling-cart & shop predictor**. Pure static HTML/CSS/JS — n
 build step, no framework, no backend. State is saved in the browser via
 `localStorage`.
 
-Live site: **https://mrking.dk/StardewCockpit/**
+## TODO
+
+Y1 Guarantee prediction is broken for switch.
+Switch, Seed: 450982496, predicted: 1xRed Cabbage seeds Fall 12 Y1, actual: 5xRed Cabbage seeds Fall 7 Y1
 
 ## Project structure
 
