@@ -166,7 +166,7 @@ function spriteSrc(filename) {
 }
 function ITEM_IMG(it)  { return spriteSrc(it.image); }
 function PORTRAIT(v)   { return spriteSrc(v.name.replace(/ /g,'_') + '.png'); }
-function ICON(filename, size) { const s = spriteSrc(filename); if (!s) return null; return h('img', { src: s, class: 'inline-icon', style: 'width:'+(size||16)+'px;height:'+(size||16)+'px;vertical-align:middle;image-rendering:pixelated;' }); }
+function ICON(filename, size) { const s = spriteSrc(filename); if (!s) return null; return h('img', { src: s, class: 'inline-icon', style: 'width:'+(size||16)+'px;height:'+(size||16)+'px;vertical-align:middle;object-fit:contain;image-rendering:pixelated;' }); }
 
 function toast(msg) {
   const t = document.getElementById('toast');
@@ -1042,42 +1042,65 @@ function openPredInfo(item) {
   if (di) { state.openTile = di.id; scheduleRender(); return; }
   showPredItemPopover(item);
 }
-function showPredItemPopover(item) {
+// ===== POPOVER DESIGN SYSTEM =====
+// One modal shell for every popover. Callers supply content; the shell owns the
+// backdrop, header (icon + title + subtitle), close behaviour and the wiki footer.
+function wikiUrlFor(name, explicitUrl) {
+  if (explicitUrl) return explicitUrl;
+  return 'https://stardewvalleywiki.com/' + encodeURIComponent(String(name).replace(/ /g, '_'));
+}
+function popoverImg(src, alt) {
+  return src ? h('img', { class: 'popover-icon-img', src, alt: alt || '' }) : null;
+}
+function openPopover(opts) {
   document.querySelectorAll('.popover-backdrop').forEach(el => el.remove());
-  const close = () => document.querySelector('.popover-backdrop')?.remove();
+  const close = () => { document.querySelector('.popover-backdrop')?.remove(); if (opts.onClose) opts.onClose(); };
   const backdrop = h('div', { class: 'popover-backdrop', on: { click: e => { if (e.target === backdrop) close(); } } });
-  const wiki = 'https://stardewvalleywiki.com/' + encodeURIComponent(item.name.replace(/ /g, '_'));
+  const asList = (x) => Array.isArray(x) ? x.filter(n => n != null && n !== '') : (x == null || x === '' ? [] : [x]);
   const popover = h('div', { class: 'popover' },
     h('div', { class: 'popover-head' },
-      h('div', { class: 'popover-icon' }, predSprite(item, 34)),
+      h('div', { class: 'popover-icon' }, opts.icon || null),
       h('div', { class: 'popover-title' },
-        h('div', { class: 'popover-name' }, item.name),
-        h('div', { class: 'popover-sub' }, item.price ? 'Price ' + item.price : 'Travelling Cart / shop')
+        h('div', { class: 'popover-name' }, ...asList(opts.title)),
+        asList(opts.subtitle).length ? h('div', { class: 'popover-sub' }, ...asList(opts.subtitle)) : null
       ),
       h('button', { class: 'popover-close', on: { click: close } }, String.fromCharCode(215))
     ),
-    h('div', { class: 'popover-wiki' },
-      h('a', { href: wiki, target: '_blank', rel: 'noopener' }, 'Open on Stardew Wiki \u2192')
-    )
+    ...asList(opts.body),
+    opts.wikiUrl ? h('div', { class: 'popover-wiki' },
+      h('a', { href: opts.wikiUrl, target: '_blank', rel: 'noopener' }, 'Open on Stardew Wiki \u2192')) : null
   );
   backdrop.appendChild(popover);
   document.body.appendChild(backdrop);
+  return { backdrop, popover, close };
 }
 
-// A predicted item rendered with the cockpit tile look (sprite + qty badge + price meta).
+function showPredItemPopover(item) {
+  openPopover({
+    icon: predSprite(item, 34),
+    title: item.name,
+    subtitle: item.price ? 'Price ' + item.price : 'Travelling Cart / shop',
+    wikiUrl: wikiUrlFor(item.name),
+  });
+}
+
+// A predicted shop item rendered through the shared standard tile component.
 function predTile(item, px) {
-  const tile = h('div', { class: 'tile pred-shop-tile', title: item.name });
-  tile.appendChild(predSprite(item, px));
   let qn = null;
   if (item.qtyNum != null) qn = item.qtyNum;
   else if (typeof item.qty === 'number') qn = item.qty;
   else if (typeof item.qty === 'string') { const m = item.qty.match(/\d+/); qn = m ? +m[0] : null; }
-  if (item.qty === '\u221e') tile.appendChild(h('div', { class: 'tile-badge' }, '\u221e'));
-  else if (qn && qn > 1) tile.appendChild(h('div', { class: 'tile-badge' }, String(qn)));
-  if (item.price != null && item.price !== '') tile.appendChild(h('div', { class: 'tile-meta' }, fmtPrice(item.price)));
-  tile.appendChild(h('div', { class: 'tile-name-hover' }, item.name));
-  tile.addEventListener('contextmenu', (e) => { e.preventDefault(); openPredInfo(item); });
-  return tile;
+  const overlays = [];
+  if (item.qty === '\u221e') overlays.push(badge('\u221e'));
+  else if (qn && qn > 1) overlays.push(badge(String(qn)));
+  if (item.price != null && item.price !== '') overlays.push(banner(fmtPrice(item.price)));
+  overlays.push(nameHover(item.name));
+  return tile('standard', {
+    title: item.name,
+    sprite: predSprite(item, px),
+    overlays,
+    onContext: () => openPredInfo(item),
+  });
 }
 
 function doPredictorSearchById(id, name) {
@@ -1159,12 +1182,7 @@ function renderPredictorBoxes() {
   const dp = Predictor.daysPlayed(year, season0, state.inGameDate.day);
   const wrap = h('div', { class: 'pred-shops' });
 
-  const grid = (items, rows) => {
-    const g = h('div', { class: 'pred-grid' });
-    if (rows > 1) g.style.minHeight = (rows * 54 + (rows - 1) * 6) + 'px';
-    for (const it of items) g.appendChild(predTile(it, D));
-    return g;
-  };
+  const grid = (items) => tileGrid('standard', items.map(it => predTile(it, D)));
   const msg = (rows) => h('div', { class: 'pred-shop-msg', style: `min-height:${rows * 54 + (rows - 1) * 6}px;` }, 'Enter a Game seed & platform above.');
   const fileIcon = (src) => h('img', { class: 'pred-shop-icon', src });
   const b64Icon = (file) => { const s = spriteSrc(file); return s ? h('img', { class: 'pred-shop-icon', src: s }) : null; };
@@ -1179,7 +1197,7 @@ function renderPredictorBoxes() {
     else {
       const cDp = Predictor.isCartDay(dp) ? dp : Predictor.nextCartDay(dp);
       sub = cDp !== dp ? 'next · ' + fmtDateShort(cDp) : 'today';
-      body = grid(Predictor.cartDay(p.platform, uid, cDp), 4);
+      body = grid(Predictor.cartDay(p.platform, uid, cDp));
     }
     wrap.appendChild(box(fileIcon('assets/Traveling_Cart.png'), 'Traveling Cart', sub, body));
   }
@@ -1189,7 +1207,7 @@ function renderPredictorBoxes() {
     if (uid === null) body = msg(1);
     else {
       const k = Predictor.nextKrobus(p.platform, uid, dp);
-      if (k) { sub = (k.dp !== dp ? 'next · ' : '') + k.day + ' · ' + fmtDateShort(k.dp); body = grid([k], 1); }
+      if (k) { sub = (k.dp !== dp ? 'next · ' : '') + k.day + ' · ' + fmtDateShort(k.dp); body = grid([k]); }
       else body = msg(1);
     }
     wrap.appendChild(box(b64Icon('Krobus.png') || fileIcon('assets/Traveling_Cart.png'), 'Krobus', sub, body));
@@ -1198,14 +1216,14 @@ function renderPredictorBoxes() {
   {
     let body, sub = '';
     if (uid === null) body = msg(1);
-    else { sub = 'today'; body = grid([Predictor.sandyItem(p.platform, uid, dp)], 1); }
+    else { sub = 'today'; body = grid([Predictor.sandyItem(p.platform, uid, dp)]); }
     wrap.appendChild(box(b64Icon('Sandy.png') || fileIcon('assets/Traveling_Cart.png'), 'Sandy', sub, body));
   }
   // Pierre / Joja — shared wallpaper + each shop's flooring.
   {
     let body, sub = '';
     if (uid === null) body = msg(1);
-    else { sub = 'today'; body = grid(Predictor.wallFloorItems(p.platform, uid, dp), 1); }
+    else { sub = 'today'; body = grid(Predictor.wallFloorItems(p.platform, uid, dp)); }
     wrap.appendChild(box(fileIcon('assets/Pierres_shop.png'), 'Pierre / Joja', sub, body));
   }
   return wrap;
@@ -1289,7 +1307,7 @@ function renderRightNow() {
       ));
     }
     for (const f of festsToday) {
-      const iconBlob = h('div', { class: 'icon-blob' }, h('img', { src: festIcon(f), style: 'width:20px;height:20px;image-rendering:pixelated;' }));
+      const iconBlob = h('div', { class: 'icon-blob' }, h('img', { src: festIcon(f), style: 'width:20px;height:20px;object-fit:contain;image-rendering:pixelated;' }));
       todayCardChildren.push(h('div', { class: 'today-fest', style: 'cursor:pointer;', on: { contextmenu: (e) => { e.preventDefault(); e.stopPropagation(); showFestivalPopover(f); } } },
         iconBlob,
         h('div', {},
@@ -1344,7 +1362,7 @@ function renderRightNow() {
   }
   for (const f of festSoon) {
     eventPills.push(h('span', { class: 'now-event-pill fest', title: `${f.name} — ${cap(f.festSeason)} ${f.day}`, style: 'cursor:pointer;', on: { contextmenu: (e) => { e.preventDefault(); showFestivalPopover(f); } } },
-      h('img', { src: festIcon(f), style: 'width:18px;height:18px;image-rendering:pixelated;' }),
+      h('img', { src: festIcon(f), style: 'width:18px;height:18px;object-fit:contain;image-rendering:pixelated;' }),
       h('span', { class: 'now-event-pill-text' }, `${f.name} (${f.daysUntil}d)`)
     ));
   }
@@ -1425,22 +1443,14 @@ function renderRightNow() {
     const buildPills = (list) => (list || []).map(e => {
       const f = e.fish;
       const w = e.weather || f.weather;
-      const cls = ['fish-pill'];
-      if (w === 'sunny') cls.push('sunny');
-      else if (w === 'rainy') cls.push('rainy');
-      if (f.legendary) cls.push('legendary');
-      const pill = h('span', {
-        class: cls.join(' '),
+      const extra = [];
+      if (w === 'sunny') extra.push('weather-sunny');
+      else if (w === 'rainy') extra.push('weather-rainy');
+      if (f.legendary) extra.push('legendary');
+      return compactTile(f, {
         title: [f.name, f.legendary ? '\u2b50 Legendary' : null, f.when || 'Anytime', f.note || null].filter(Boolean).join(' \u00b7 '),
-        on: {
-          click: () => { autoCheckNext(f); },
-          contextmenu: (ev) => { ev.preventDefault(); state.openTile = f.id; scheduleRender(); }
-        }
+        extra,
       });
-      const src = ITEM_IMG(f);
-      if (src) pill.appendChild(h('img', { src, alt: f.name }));
-      else pill.textContent = f.name.slice(0, 2);
-      return pill;
     });
     const gridChildren = [
       h('div', {}), // empty top-left corner
@@ -1449,8 +1459,8 @@ function renderRightNow() {
     ];
     for (const loc of usedLocs) {
       gridChildren.push(h('div', { class: 'fish-now-label' }, loc));
-      gridChildren.push(h('div', { class: 'fish-now-items' }, ...buildPills(groupedOther[loc])));
-      gridChildren.push(h('div', { class: 'fish-now-items' }, ...buildPills(groupedExcl[loc])));
+      gridChildren.push(tileGrid('compact', buildPills(groupedOther[loc])));
+      gridChildren.push(tileGrid('compact', buildPills(groupedExcl[loc])));
     }
     feed.push(h('div', { class: 'now-row' },
       h('div', { class: 'now-icon' }, ICON('Bamboo_Pole.png',20)),
@@ -1465,18 +1475,7 @@ function renderRightNow() {
   function renderSplitIcons(allItems, variant) {
     const excl = allItems.filter(i => i.seasons.length === 1 && i.seasons[0] === season);
     const other = allItems.filter(i => !(i.seasons.length === 1 && i.seasons[0] === season));
-    const buildCol = (list) => h('div', { class: 'now-icons' },
-      list.map(f => {
-        const el = h('div', { class: 'now-icon-item', title: f.name, on: {
-          click: () => { autoCheckNext(f); },
-          contextmenu: (e) => { e.preventDefault(); state.openTile = f.id; scheduleRender(); }
-        } });
-        const src = ITEM_IMG(f);
-        if (src) el.appendChild(h('img', { src, alt: f.name }));
-        else el.textContent = f.name.slice(0, 2);
-        return el;
-      })
-    );
+    const buildCol = (list) => tileGrid('compact', list.map(f => compactTile(f)));
     const cls = 'now-split' + (variant ? ' ' + variant : '');
     return h('div', { class: cls },
       h('div', { class: 'now-split-col' },
@@ -1526,16 +1525,7 @@ function renderRightNow() {
     !progress(i).done &&
     (state.mode === 'perfection' || i.cc)
   );
-  const nowIconItem = (f) => {
-    const el = h('div', { class: 'now-icon-item', title: f.name, on: {
-      click: () => { autoCheckNext(f); },
-      contextmenu: (e) => { e.preventDefault(); state.openTile = f.id; scheduleRender(); }
-    } });
-    const src = ITEM_IMG(f);
-    if (src) el.appendChild(h('img', { src, alt: f.name }));
-    else el.textContent = f.name.slice(0, 2);
-    return el;
-  };
+  const nowIconItem = (f) => compactTile(f);
   // Cart column: only when the next (or current) cart day offers a still-needed item.
   let cartCol = null;
   {
@@ -1555,14 +1545,14 @@ function renderRightNow() {
           h('div', { class: 'now-title' },
             h('img', { src: 'assets/Traveling_Cart.png', class: 'now-title-icon' }),
             'Traveling Cart', h('span', { class: 'now-sub-note' }, when), h('span', { class: 'count' }, needed.length)),
-          h('div', { class: 'now-icons' }, needed.slice(0, 15).map(nowIconItem))
+          tileGrid('compact', needed.slice(0, 15).map(nowIconItem))
         );
       }
     }
   }
   const fruitTitleNode = h('div', { class: 'now-title' }, 'Fruit trees', h('span', { class: 'count' }, fruitsLeft.length));
   const fruitBodyNode = fruitsLeft.length
-    ? h('div', { class: 'now-icons' }, fruitsLeft.map(nowIconItem))
+    ? tileGrid('compact', fruitsLeft.map(nowIconItem))
     : h('div', { class: 'now-detail now-done' }, '\u2714 All collected');
   feed.push(h('div', { class: 'now-row' },
     h('div', { class: 'now-icon' }, ICON('Apple.png', 20)),
@@ -1684,47 +1674,31 @@ function renderGoldTracker() {
 }
 
 function openGoldPopover() {
-  document.querySelectorAll('.gold-popover-backdrop').forEach(el => el.remove());
-  const close = () => { document.querySelector('.gold-popover-backdrop')?.remove(); };
-  const backdrop = h('div', { class: 'popover-backdrop gold-popover-backdrop', on: { click: e => { if (e.target === backdrop) close(); } } });
-
   const costs = getGoldCosts();
   const total = getGoldTotal();
   const paid = costs.filter(g => isGoldItemDone(g));
   const paidSum = paid.reduce((s, x) => s + x.gold, 0);
   const remaining = total - paidSum;
   const pct = total ? Math.round(paidSum / total * 100) : 100;
-
-  const popover = h('div', { class: 'gold-popover' },
-    h('div', { class: 'gold-popover-head' },
-      ICON('Gold_Coin.png', 24),
-      h('span', { class: 'gold-popover-title' }, 'Gold Tracker'),
-      h('button', { class: 'popover-close', on: { click: close } }, '×')
-    ),
-    h('div', { class: 'gold-popover-summary' },
-      h('span', {}, `Paid: ${fmtGold(paidSum)}`),
-      h('span', {}, `Remaining: ${fmtGold(remaining)}`)
-    ),
-    h('div', { class: 'gold-popover-bar' },
-      h('div', { class: 'fill', style: `width:${pct}%` })
-    ),
-    h('div', { class: 'gold-items' },
-      [...costs].sort((a, b) => a.gold - b.gold).map(g => {
-        const done = isGoldItemDone(g);
-        return h('div', {
-          class: 'gold-item' + (done ? ' done' : ''),
-        },
-          h('img', { src: spriteSrc(g.image), style: 'width:20px;height:20px;image-rendering:pixelated;' }),
-          h('span', { class: 'gold-item-name' }, g.name),
-          h('span', { class: 'gold-item-cost' }, fmtGold(g.gold)),
-          done ? h('span', { class: 'gold-item-check' }, '✓') : null
-        );
-      })
-    )
-  );
-
-  backdrop.appendChild(popover);
-  document.body.appendChild(backdrop);
+  openPopover({
+    icon: popoverImg(spriteSrc('Gold_Coin.png'), 'Gold'),
+    title: 'Gold Tracker',
+    subtitle: `${fmtGold(paidSum)} paid \u00b7 ${fmtGold(remaining)} to go`,
+    body: [
+      h('div', { class: 'gold-popover-bar' }, h('div', { class: 'fill', style: `width:${pct}%` })),
+      h('div', { class: 'gold-items' },
+        [...costs].sort((a, b) => a.gold - b.gold).map(g => {
+          const done = isGoldItemDone(g);
+          return h('div', { class: 'gold-item' + (done ? ' done' : '') },
+            h('img', { class: 'gold-item-img', src: spriteSrc(g.image), alt: g.name }),
+            h('span', { class: 'gold-item-name' }, g.name),
+            h('span', { class: 'gold-item-cost' }, fmtGold(g.gold)),
+            done ? h('span', { class: 'gold-item-check' }, '✓') : null
+          );
+        })
+      ),
+    ],
+  });
 }
 
 function refreshGoldTracker() {
@@ -1789,7 +1763,7 @@ function renderTilePanel(icon, title, items, extraClass) {
       h('div', { class: 'panel-title' }, title),
       h('div', { class: 'panel-count' }, `${done} / ${items.length}`)
     ),
-    h('div', { class: 'tile-grid' }, items.map(it => renderTile(it)))
+    tileGrid('standard', items.map(it => renderTile(it)))
   );
 }
 
@@ -1824,61 +1798,98 @@ function autoCheckNext(item) {
   if (d.craft > 0 && (c.craft || 0) < d.craft) { setChannel(item.id, 'craft', (c.craft || 0) + 1); return; }
 }
 
+// ===== DESIGN SYSTEM: tile + grid + overlays =====
+// Three tile sizes (standard / slot / compact), one grid component (variant =
+// size), and single overlay builders (badge / quality / banner / tracker /
+// nameHover) layered on top of a tile when applicable. Realized class names for
+// the demand badge and channel tracker are kept (`.tile-badge`, `.tile-channels`)
+// so the surgical state-update path (updateTileState) stays intact.
+function badge(text) { return h('div', { class: 'tile-badge' }, text); }
+function qualityStar(q) { return h('div', { class: 'tile-quality-star ' + (q || 'gold') }, '★'); }
+function banner(content) { return h('div', { class: 'tile-meta' }, content); }
+function tracker(pips) { return h('div', { class: 'tile-channels' }, ...pips); }
+function nameHover(text, quality) {
+  return h('div', { class: 'tile-name-hover' }, text, quality ? h('span', { class: 'q-star ' + quality }, '★') : null);
+}
+function tile(variant, o) {
+  const cls = ['tile', 'tile-' + variant];
+  if (o.done) cls.push('done');
+  if (o.cls) cls.push(...(Array.isArray(o.cls) ? o.cls : [o.cls]));
+  const attrs = { class: cls.join(' ') };
+  if (o.id != null) attrs['data-item-id'] = o.id;
+  if (o.checkId != null) attrs['data-check-id'] = o.checkId;
+  if (o.title) attrs.title = o.title;
+  const el = h('div', attrs);
+  el.appendChild(o.sprite || h('div', { class: 'tile-img-fallback' }, o.fallback || ''));
+  for (const ov of (o.overlays || [])) if (ov) el.appendChild(ov);
+  if (o.onClick) el.addEventListener('click', o.onClick);
+  else el.classList.add('tile-static');
+  if (o.onContext) el.addEventListener('contextmenu', (e) => { e.preventDefault(); o.onContext(e); });
+  return el;
+}
+function tileGrid(variant, children) {
+  return h('div', { class: 'tile-grid tile-grid-' + variant }, ...children);
+}
+// Compact availability tile for a tracked item (now-section forage/crops/fish/fruit).
+function compactTile(f, opts) {
+  opts = opts || {};
+  const src = ITEM_IMG(f);
+  return tile('compact', {
+    title: opts.title || f.name,
+    cls: opts.extra,
+    sprite: src ? h('img', { src, alt: f.name }) : h('div', { class: 'tile-img-fallback' }, f.name.slice(0, 2)),
+    onClick: () => autoCheckNext(f),
+    onContext: () => { state.openTile = f.id; scheduleRender(); },
+  });
+}
+
 function renderTile(item) {
-  const tile = h('div', { 'data-item-id': item.id });
-  const src = ITEM_IMG(item);
-  if (src) {
-    const img = h('img', { src, alt: item.name, loading: 'eager' });
-    img.addEventListener('error', () => { img.remove(); tile.appendChild(h('div', { class: 'tile-img-fallback' }, item.name)); }, { once: true });
-    tile.appendChild(img);
-  } else {
-    tile.appendChild(h('div', { class: 'tile-img-fallback' }, item.name));
-  }
-  tile.appendChild(h('div', { class: 'tile-badge' }));
-  if (item.qualityItem) {
-    const star = h('div', { class: 'tile-quality-star ' + (item.quality || 'gold') }, '★');
-    tile.appendChild(star);
-  }
-  const pips = h('div', { class: 'tile-channels' });
   const d = demand(item);
-  if (d.ship) pips.appendChild(h('div', { class: 'pip ship' }));
-  if (d.fish && !d.ship) pips.appendChild(h('div', { class: 'pip fish' }));
-  if (d.cc)   pips.appendChild(h('div', { class: 'pip cc' }));
-  if (d.cook) {
-    const cookPip = h('div', { class: 'pip cook' });
-    cookPip.appendChild(h('div', { class: 'fill' }));
-    pips.appendChild(cookPip);
-  }
-  if (craftByItemName[item.name]?.length) {
-    const craftPip = h('div', { class: 'pip craft' });
-    craftPip.appendChild(h('div', { class: 'fill' }));
-    pips.appendChild(craftPip);
-  }
-  tile.appendChild(pips);
+  const overlays = [badge()];
+  if (item.qualityItem) overlays.push(qualityStar(item.quality));
+  const pips = [];
+  if (d.ship) pips.push(h('div', { class: 'pip ship' }));
+  if (d.fish && !d.ship) pips.push(h('div', { class: 'pip fish' }));
+  if (d.cc) pips.push(h('div', { class: 'pip cc' }));
+  if (d.cook) { const cp = h('div', { class: 'pip cook' }); cp.appendChild(h('div', { class: 'fill' })); pips.push(cp); }
+  if (craftByItemName[item.name]?.length) { const cp = h('div', { class: 'pip craft' }); cp.appendChild(h('div', { class: 'fill' })); pips.push(cp); }
+  overlays.push(tracker(pips));
   if (item.kind === 'fish' && item.weather && item.weather !== 'any') {
-    tile.appendChild(h('div', { class: 'tile-weather-icon' }, item.weather === 'sunny' ? '☀' : '☔'));
+    overlays.push(h('div', { class: 'tile-weather-icon' }, item.weather === 'sunny' ? '☀' : '☔'));
   }
-  // Show area + time on fish tiles (no overlap with weather icon because of position)
   if (item.kind === 'fish' && (item.where || item.when)) {
     const parts = [];
     if (item.where) parts.push(item.where.slice(0, 4));
     if (item.when) parts.push(item.when);
-    tile.appendChild(h('div', { class: 'tile-meta' }, parts.join(' · ')));
+    overlays.push(banner(parts.join(' · ')));
   }
-  tile.appendChild(h('div', { class: 'tile-name-hover' },
-    item.qualityItem ? matDisplayName(item.name, true).baseName : item.name,
-    item.qualityItem ? h('span', { class: 'q-star ' + item.quality }, '★') : null
-  ));
-  tile.addEventListener('contextmenu', (e) => { e.preventDefault(); state.openTile = item.id; scheduleRender(); });
-  tile.addEventListener('click', () => { autoCheckNext(item); });
-  updateTileState(tile, item);
-  return tile;
+  overlays.push(nameHover(item.qualityItem ? matDisplayName(item.name, true).baseName : item.name, item.qualityItem ? item.quality : null));
+
+  const src = ITEM_IMG(item);
+  let spriteNode;
+  if (src) {
+    const img = h('img', { src, alt: item.name, loading: 'eager' });
+    img.addEventListener('error', () => { img.replaceWith(h('div', { class: 'tile-img-fallback' }, item.name)); }, { once: true });
+    spriteNode = img;
+  } else {
+    spriteNode = h('div', { class: 'tile-img-fallback' }, item.name);
+  }
+
+  const el = tile('standard', {
+    id: item.id,
+    sprite: spriteNode,
+    overlays,
+    onClick: () => autoCheckNext(item),
+    onContext: () => { state.openTile = item.id; scheduleRender(); },
+  });
+  updateTileState(el, item);
+  return el;
 }
 
 function updateTileState(tile, item) {
   const p = progress(item);
   const d = demand(item);
-  const classes = ['tile'];
+  const classes = ['tile', 'tile-standard'];
   if (p.done) classes.push('done');
   if (item.legendary) classes.push('legendary');
   if (item.kind === 'fish' && item.weather === 'sunny') classes.push('weather-sunny');
@@ -1887,13 +1898,7 @@ function updateTileState(tile, item) {
   const badge = tile.querySelector('.tile-badge');
   if (badge) {
     if (d.total > 0) {
-      let cls = 'tile-badge';
-      let txt = '';
-      if (p.done) { cls += ' done'; txt = '✓'; }
-      else if (p.got > 0) { cls += ' partial'; txt = `${p.got}/${d.total}`; }
-      else { cls += ' zero'; txt = String(d.total); }
-      badge.className = cls;
-      badge.textContent = txt;
+      badge.textContent = p.done ? '✓' : p.got > 0 ? `${p.got}/${d.total}` : String(d.total);
       badge.style.display = '';
     } else {
       badge.style.display = 'none';
@@ -1958,17 +1963,17 @@ function renderCalendar(season) {
           h('div', { class: 'd-num' }, d),
           bd && fest ? h('div', { class: 'cal-day-split' },
             h('div', { class: 'cal-day-split-half', title: `${bd.name}'s birthday`, on: { contextmenu: (e) => { e.preventDefault(); e.stopPropagation(); showVillagerPopover(bd); } } },
-              h('img', { src: PORTRAIT(bd), style: 'width:18px;height:18px;image-rendering:pixelated;border-radius:2px;' })
+              h('img', { src: PORTRAIT(bd), style: 'width:18px;height:18px;object-fit:cover;image-rendering:pixelated;border-radius:2px;' })
             ),
             h('div', { class: 'cal-day-split-half', title: fest.name, on: { contextmenu: (e) => { e.preventDefault(); e.stopPropagation(); showFestivalPopover(fest); } } },
-              h('img', { src: festIcon(fest), style: 'width:16px;height:16px;image-rendering:pixelated;' })
+              h('img', { src: festIcon(fest), style: 'width:16px;height:16px;object-fit:contain;image-rendering:pixelated;' })
             )
           ) :
           bd ? h('div', { class: 'cal-day-icon', title: bd.name, on: { contextmenu: (e) => { e.preventDefault(); e.stopPropagation(); showVillagerPopover(bd); } } },
-            h('img', { src: PORTRAIT(bd), style: 'width:20px;height:20px;image-rendering:pixelated;border-radius:2px;' })
+            h('img', { src: PORTRAIT(bd), style: 'width:20px;height:20px;object-fit:cover;image-rendering:pixelated;border-radius:2px;' })
           ) :
           fest ? h('div', { class: 'cal-day-icon', title: fest.name, on: { contextmenu: (e) => { e.preventDefault(); e.stopPropagation(); showFestivalPopover(fest); } } },
-            h('img', { src: festIcon(fest), style: 'width:18px;height:18px;image-rendering:pixelated;' })
+            h('img', { src: festIcon(fest), style: 'width:18px;height:18px;object-fit:contain;image-rendering:pixelated;' })
           ) : null,
         );
         grid.appendChild(cell);
@@ -1985,77 +1990,43 @@ const FEST_HOOK_IMG = 'https://stardewvalleywiki.com/mediawiki/images/2/23/Hook_
 function festIcon(f) { return f.icon === 'market' ? FEST_MARKET_IMG : f.icon === 'hook' ? FEST_HOOK_IMG : FEST_FLAG_IMG; }
 
 function showFestivalPopover(fest) {
-  document.querySelectorAll('.popover-backdrop').forEach(el => el.remove());
-  const close = () => document.querySelector('.popover-backdrop')?.remove();
-  const backdrop = h('div', { class: 'popover-backdrop', on: { click: e => { if (e.target === backdrop) close(); } } });
-  const dayStr = typeof fest.day === 'string' ? `Day ${fest.day}` : `Day ${fest.day}`;
-  const popover = h('div', { class: 'popover' },
-    h('div', { class: 'popover-head' },
-      h('div', { class: 'popover-icon' },
-        h('img', { src: festIcon(fest), alt: fest.name, style: 'width:100%;height:100%;image-rendering:pixelated;' })
-      ),
-      h('div', { class: 'popover-title' },
-        h('div', { class: 'popover-name' }, fest.name),
-        h('div', { class: 'popover-sub' }, `${dayStr} · ${fest.where}`)
-      ),
-      h('button', { class: 'popover-close', on: { click: close } }, String.fromCharCode(215))
-    ),
-    h('div', { style: 'display:flex; flex-direction:column; gap:8px; padding:4px 0;' },
-      h('div', { style: 'font-size:13px; color:var(--ink); line-height:1.5;' }, fest.hint || ''),
-      fest.url ? h('a', { href: fest.url, target: '_blank', rel: 'noopener', style: 'font-size:12px; color:var(--primary); font-weight:600; text-decoration:none; display:inline-flex; align-items:center; gap:4px;' }, '📖 Wiki page →') : null
-    )
-  );
-  backdrop.appendChild(popover);
-  document.body.appendChild(backdrop);
+  openPopover({
+    icon: popoverImg(festIcon(fest), fest.name),
+    title: fest.name,
+    subtitle: `Day ${fest.day} \u00b7 ${fest.where}`,
+    body: fest.hint ? h('div', { class: 'popover-tip' }, fest.hint) : null,
+    wikiUrl: fest.url,
+  });
 }
 
-function showVillagerPopover(v) {
-  document.querySelectorAll('.popover-backdrop').forEach(el => el.remove());
-  const close = () => document.querySelector('.popover-backdrop')?.remove();
-  const backdrop = h('div', { class: 'popover-backdrop', on: { click: e => { if (e.target === backdrop) close(); } } });
-  const src = PORTRAIT(v);
-  const popover = h('div', { class: 'popover' },
-    h('div', { class: 'popover-head' },
-      h('div', { class: 'popover-icon' },
-        src ? h('img', { src, alt: v.name, style: 'width:100%;height:100%;image-rendering:pixelated;' }) : h('div', {}, v.name.slice(0,2))
-      ),
-      h('div', { class: 'popover-title' },
-        h('div', { class: 'popover-name' }, v.name),
-        h('div', { class: 'popover-sub' }, 'Birthday: ' + cap(v.birthday.season) + ' ' + v.birthday.day)
-      ),
-      h('button', { class: 'popover-close', on: { click: close } }, String.fromCharCode(215))
-    ),
-    h('div', { style: 'display: flex; flex-direction: column; gap: 8px;' },
-      h('div', { style: 'font-weight: 700; font-size: 13px; color: var(--ink-soft);' }, 'Loved Gifts'),
-      h('div', { style: 'display: flex; flex-wrap: wrap; gap: 6px;' },
-        ...(v.loved || []).map(gift => {
-          const giftItem = DATA.items.find(it => it.name === gift);
-          const gSrc = giftItem ? ITEM_IMG(giftItem) : spriteSrc(gift.replace(/ /g, '_') + '.png');
-          return h('div', { style: 'display:flex; align-items:center; gap:4px; background:var(--bg-soft); padding:3px 8px; border-radius:4px; font-size:12px;', title: gift },
-            gSrc ? h('img', { src: gSrc, style: 'width:16px;height:16px;image-rendering:pixelated;' }) : null,
-            gSrc ? null : gift
-          );
-        })
-      ),
-      (v.liked && v.liked.length) ? h('div', { style: 'font-weight: 700; font-size: 13px; color: var(--ink-faint); margin-top: 4px;' }, 'Liked Gifts') : null,
-      (v.liked && v.liked.length) ? h('div', { style: 'display: flex; flex-wrap: wrap; gap: 5px;' },
-        ...(v.liked || []).map(gift => {
-          const giftItem = DATA.items.find(it => it.name === gift);
-          const gSrc = giftItem ? ITEM_IMG(giftItem) : spriteSrc(gift.replace(/ /g, '_') + '.png');
-          return h('div', { style: 'display:flex; align-items:center; gap:3px; background:var(--bg-soft); padding:2px 6px; border-radius:4px; font-size:11px; opacity:0.85;', title: gift },
-            gSrc ? h('img', { src: gSrc, style: 'width:14px;height:14px;image-rendering:pixelated;' }) : null,
-            gSrc ? null : gift
-          );
-        })
-      ) : null
-    ),
-    v.note ? h('div', { style: 'font-size:12px; color:var(--warn); font-style:italic; margin-top:4px;' }, v.note) : null,
-    h('div', { class: 'popover-wiki' },
-      h('a', { href: 'https://stardewvalleywiki.com/' + v.name.replace(/ /g, '_'), target: '_blank', rel: 'noopener' }, 'Open on Stardew Wiki →')
-    )
+function villagerGiftChips(gifts, liked) {
+  return h('div', { class: 'gift-chips' },
+    ...(gifts || []).map(gift => {
+      const giftItem = DATA.items.find(it => it.name === gift);
+      const gSrc = giftItem ? ITEM_IMG(giftItem) : spriteSrc(gift.replace(/ /g, '_') + '.png');
+      return h('div', { class: 'gift-chip' + (liked ? ' liked' : ''), title: gift },
+        gSrc ? h('img', { src: gSrc, alt: gift }) : null,
+        gSrc ? null : gift
+      );
+    })
   );
-  backdrop.appendChild(popover);
-  document.body.appendChild(backdrop);
+}
+function showVillagerPopover(v) {
+  openPopover({
+    icon: popoverImg(PORTRAIT(v), v.name) || h('div', { class: 'popover-icon-fallback' }, v.name.slice(0, 2)),
+    title: v.name,
+    subtitle: 'Birthday: ' + cap(v.birthday.season) + ' ' + v.birthday.day,
+    body: [
+      h('div', { class: 'popover-section' },
+        h('div', { class: 'popover-label' }, 'Loved Gifts'),
+        villagerGiftChips(v.loved)),
+      (v.liked && v.liked.length) ? h('div', { class: 'popover-section' },
+        h('div', { class: 'popover-label' }, 'Liked Gifts'),
+        villagerGiftChips(v.liked, true)) : null,
+      v.note ? h('div', { class: 'popover-tip' }, v.note) : null,
+    ],
+    wikiUrl: wikiUrlFor(v.name),
+  });
 }
 
 // ===== FISH AVAILABILITY — per-location season data for multi-location fish =====
@@ -2272,9 +2243,6 @@ function renderPopover() {
   const d = demand(item);
   const c = getChannels(item.id);
 
-  const close = () => { state.openTile = null; document.querySelector('.popover-backdrop')?.remove(); };
-  const backdrop = h('div', { class: 'popover-backdrop', on: { click: e => { if (e.target === backdrop) close(); } } });
-
   // Find any bundles this item participates in (CC + Missing) — used for showing quality requirements
   const bundleHits = (bundlesByItemId[item.id] || []).slice();
   // Also check if item appears in Missing Bundle items
@@ -2289,32 +2257,12 @@ function renderPopover() {
   });
 
   const iconSrc = ITEM_IMG(item);
-  const popover = h('div', { class: 'popover' },
-    h('div', { class: 'popover-head' },
-      h('div', { class: 'popover-icon' },
-        iconSrc ? (() => { const img = h('img', { src: iconSrc, alt: item.name }); img.addEventListener('error', () => img.style.display = 'none', { once: true }); return img; })()
-                : h('div', { style: 'font-size: 9px; padding: 4px; text-align: center;' }, item.name)
-      ),
-      h('div', { class: 'popover-title' },
-        h('div', { class: 'popover-name' },
-          item.qualityItem ? matDisplayName(item.name, true).baseName : item.name,
-          item.qualityItem ? qStar(item.quality) : null
-        ),
-        h('div', { class: 'popover-sub' },
-          item.legendary ? '⭐ Legendary · ' : '',
-          item.seasons.includes('any') ? 'Any season' : item.seasons.map(cap).join(' / '),
-          item.note ? ` · ${item.note}` : ''
-        )
-      ),
-      h('button', { class: 'popover-close', on: { click: close } }, '×')
-    ),
-    (item.where || item.when) ? h('div', { class: 'popover-meta' },
-      item.where ? h('div', { class: 'popover-meta-row' }, h('span', { class: 'popover-meta-label' }, 'Where'), h('span', {}, item.where)) : null,
-      item.when ? h('div', { class: 'popover-meta-row' }, h('span', { class: 'popover-meta-label' }, 'When'), h('span', {}, item.when)) : null,
-      item.weather && item.weather !== 'any' ? h('div', { class: 'popover-meta-row' }, h('span', { class: 'popover-meta-label' }, 'Weather'), h('span', {}, item.weather === 'rainy' ? '🌧️ Rain' : '☀️ Sun')) : null,
-    ) : null,
-    ITEM_TIPS[item.qualityItem ? matDisplayName(item.name, true).baseName : item.name] ? h('div', { class: 'popover-tip' }, ITEM_TIPS[item.qualityItem ? matDisplayName(item.name, true).baseName : item.name]) : null,
-    d.total > 0 || bundleHits.length || (state.includeMB && mbHits.length) ? h('div', { class: 'popover-channels' },
+  const icon = iconSrc
+    ? (() => { const img = popoverImg(iconSrc, item.name); img.addEventListener('error', () => img.style.display = 'none', { once: true }); return img; })()
+    : h('div', { class: 'popover-icon-fallback' }, item.name);
+  const tipName = item.qualityItem ? matDisplayName(item.name, true).baseName : item.name;
+
+  const channelsNode = (d.total > 0 || bundleHits.length || (state.includeMB && mbHits.length)) ? h('div', { class: 'popover-channels' },
       d.ship ? channelRow(item, 'ship', ICON('Mini-Shipping_Bin.png',16), 'Ship to box', 'Counts for Items Shipped' + (d.fish ? ' & Master Angler' : ''), c.ship) : null,
       d.fish && !d.ship ? channelRow(item, 'ship', ICON('Bamboo_Pole.png',16), 'Catch this fish', 'Needed for Master Angler / Perfection', c.ship) : null,
       (d.cc || bundleHits.length) ? (() => {
@@ -2375,13 +2323,31 @@ function renderPopover() {
       }) : []),
     ) : (item.forFish ? h('div', { class: 'popover-channels' },
       channelRow(item, 'ship', ICON('Bamboo_Pole.png',16), 'Catch this fish', 'Needed for Master Angler / Perfection', c.ship)
-    ) : h('div', { class: 'popover-meta' }, state.mode === 'cc' ? 'This item is not in any CC bundle.' : 'No tracking needed.')),
-    h('div', { class: 'popover-wiki' },
-      h('a', { href: item.url || ('https://stardewvalleywiki.com/' + item.name.replace(/ /g, '_')), target: '_blank', rel: 'noopener' }, 'Open on Stardew Wiki →')
-    )
-  );
-  backdrop.appendChild(popover);
-  document.body.appendChild(backdrop);
+    ) : h('div', { class: 'popover-meta' }, state.mode === 'cc' ? 'This item is not in any CC bundle.' : 'No tracking needed.'));
+
+  openPopover({
+    icon,
+    title: [
+      tipName,
+      item.qualityItem ? qStar(item.quality) : null,
+    ],
+    subtitle: [
+      item.legendary ? '⭐ Legendary · ' : '',
+      item.seasons.includes('any') ? 'Any season' : item.seasons.map(cap).join(' / '),
+      item.note ? ` · ${item.note}` : '',
+    ],
+    body: [
+      (item.where || item.when) ? h('div', { class: 'popover-meta' },
+        item.where ? h('div', { class: 'popover-meta-row' }, h('span', { class: 'popover-meta-label' }, 'Where'), h('span', {}, item.where)) : null,
+        item.when ? h('div', { class: 'popover-meta-row' }, h('span', { class: 'popover-meta-label' }, 'When'), h('span', {}, item.when)) : null,
+        item.weather && item.weather !== 'any' ? h('div', { class: 'popover-meta-row' }, h('span', { class: 'popover-meta-label' }, 'Weather'), h('span', {}, item.weather === 'rainy' ? '🌧️ Rain' : '☀️ Sun')) : null,
+      ) : null,
+      ITEM_TIPS[tipName] ? h('div', { class: 'popover-tip' }, ITEM_TIPS[tipName]) : null,
+      channelsNode,
+    ],
+    wikiUrl: wikiUrlFor(item.name, item.url),
+    onClose: () => { state.openTile = null; },
+  });
 }
 
 function channelRow(item, channel, icon, label, sub, isDone, quality) {
@@ -2537,7 +2503,7 @@ function renderBundleCard(b) {
     h('div', { class: 'bundle-body' },
       b.note ? h('div', { class: 'bundle-note' }, b.note) : null,
       b.total_slots > b.slots_to_fill ? h('div', { class: 'bundle-pick' }, 'Pick any ', h('strong', {}, target), ' of ', b.total_slots) : null,
-      h('div', { class: 'bundle-slots' }, b.items.map((it, idx) => renderBundleSlot(b, it, idx)))
+      tileGrid('slot', b.items.map((it, idx) => renderBundleSlot(b, it, idx)))
     ),
     h('div', { class: 'bundle-reward' },
       h('span', { class: 'reward-label' }, 'Reward'),
@@ -2548,25 +2514,29 @@ function renderBundleCard(b) {
 }
 
 function renderBundleSlot(b, it, idx) {
-  const slot = h('div', {
-    class: 'bundle-slot',
-    'data-bundle-id': b.id,
-    'data-slot-idx': idx,
-    title: bundleSlotTitle(it),
-  });
-  if (it.item_id) slot.setAttribute('data-bundle-slot-item', it.item_id);
-
   const src = it.image ? spriteSrc(it.image) : null;
+  let spriteNode;
   if (src) {
     const img = h('img', { src, alt: it.name || '' });
-    img.addEventListener('error', () => { img.remove(); slot.appendChild(h('div', { class: 'slot-fallback' }, it.name || '?')); }, { once: true });
-    slot.appendChild(img);
+    img.addEventListener('error', () => { const p = img.parentNode; img.remove(); if (p) p.appendChild(h('div', { class: 'tile-img-fallback' }, it.name || '?')); }, { once: true });
+    spriteNode = img;
   } else {
-    slot.appendChild(h('div', { class: 'slot-fallback' }, it.name || '?'));
+    spriteNode = h('div', { class: 'tile-img-fallback' }, it.name || '?');
   }
-  if (it.qty > 1) slot.appendChild(h('div', { class: 'slot-qty' }, `${it.qty}×`));
-  if (it.quality) slot.appendChild(h('div', { class: `slot-quality ${it.quality}` }, '★'));
-  slot.appendChild(h('div', { class: 'slot-name' }, it.name || '?'));
+  const overlays = [];
+  if (it.qty > 1) overlays.push(badge(`${it.qty}×`));
+  if (it.quality) overlays.push(qualityStar(it.quality));
+  overlays.push(nameHover(it.name || '?'));
+  const slot = tile('slot', {
+    done: bundleSlotDone(b, it, idx),
+    title: bundleSlotTitle(it),
+    sprite: spriteNode,
+    overlays,
+  });
+  slot.classList.remove('tile-static');
+  slot.setAttribute('data-bundle-id', b.id);
+  slot.setAttribute('data-slot-idx', idx);
+  if (it.item_id) slot.setAttribute('data-bundle-slot-item', it.item_id);
 
   // Click handler
   slot.addEventListener('click', () => {
@@ -2747,7 +2717,7 @@ function renderObelisksSection() {
                 const ingItem = DATA.items.find(i => i.name === ingName);
                 const ingSrc = ingItem ? spriteSrc(ingItem.image) : spriteSrc(ingName.replace(/ /g, '_') + '.png');
                 return h('span', { style: 'display:inline-flex;align-items:center;gap:1px;font-size:10px;color:var(--ink-soft);', title: `${ingName} (${ingQty})` },
-                  h('img', { src: ingSrc, alt: ingName, style: 'width:16px;height:16px;image-rendering:pixelated;' }),
+                  h('img', { src: ingSrc, alt: ingName, style: 'width:16px;height:16px;object-fit:contain;image-rendering:pixelated;' }),
                   h('span', {}, ingQty)
                 );
               })
@@ -2760,25 +2730,16 @@ function renderObelisksSection() {
 }
 
 function showBuildingPopover(o) {
-  const existing = document.querySelector('.recipe-popover-backdrop');
-  if (existing) existing.remove();
-  const backdrop = h('div', { class: 'recipe-popover-backdrop', on: { click: () => backdrop.remove() } });
-  const src = o.image ? spriteSrc(o.image) : null;
-  const popover = h('div', { class: 'recipe-popover' },
-    h('div', { class: 'recipe-popover-header' },
-      src ? h('img', { src, class: 'recipe-popover-img', style: 'width:48px;height:auto;' }) : null,
-      h('div', { class: 'recipe-popover-title' }, o.name),
-      h('button', { class: 'popover-close', on: { click: () => backdrop.remove() } }, '×')
-    ),
-    BUILDING_TIPS[o.name] ? h('div', { class: 'popover-tip' }, BUILDING_TIPS[o.name]) : null,
-    h('div', { class: 'recipe-popover-row' }, h('span', { class: 'recipe-label' }, 'Cost'), h('span', {}, o.cost)),
-    o.ingredients ? h('div', { style: 'padding: 4px 0;' }, h('div', { class: 'recipe-label', style: 'margin-bottom: 4px;' }, 'Materials'), renderIngredientIcons(o.ingredients)) : null,
-    o.url ? h('div', { class: 'recipe-popover-row' },
-      h('a', { href: o.url, target: '_blank', rel: 'noopener' }, 'View on Wiki →')
-    ) : null
-  );
-  backdrop.appendChild(popover);
-  document.body.appendChild(backdrop);
+  openPopover({
+    icon: popoverImg(o.image ? spriteSrc(o.image) : null, o.name),
+    title: o.name,
+    body: [
+      BUILDING_TIPS[o.name] ? h('div', { class: 'popover-tip' }, BUILDING_TIPS[o.name]) : null,
+      h('div', { class: 'popover-row' }, h('span', { class: 'popover-label' }, 'Cost'), h('span', {}, o.cost)),
+      o.ingredients ? h('div', { class: 'popover-section' }, h('div', { class: 'popover-label' }, 'Materials'), renderIngredientIcons(o.ingredients)) : null,
+    ],
+    wikiUrl: o.url,
+  });
 }
 
 // ===== WALNUTS =====
@@ -3151,26 +3112,26 @@ function renderMaterialsSection() {
   return sec;
 }
 // ===== COOKING =====
+// Shared checklist tile (cooking / crafting / goals): sprite + left-click toggle + right-click info.
+function checklistTile(c, src, onContext) {
+  return tile('slot', {
+    checkId: c.id,
+    done: !!state.checks[c.id],
+    title: c.name + (c.obtain ? '\n' + c.obtain : c.source ? '\nSource: ' + c.source : c.ingredients ? '\nRecipe: ' + c.ingredients : ''),
+    sprite: src ? h('img', { src, alt: c.name }) : h('div', { class: 'tile-img-fallback' }, c.name.slice(0, 4)),
+    onClick: () => toggleCheck(c.id),
+    onContext: () => onContext(c),
+  });
+}
+
 function renderCookingSection() {
   const p = computeScore();
   return h('div', { class: 'ref-section', id: 'section-cooking' },
     refHead(ICON('Fried_Egg.png',18), 'Cooking', `${p.cooking.got} / ${p.cooking.total}`, 'section-cooking', 'cooking'),
-    h('div', { class: 'icon-grid' },
+    tileGrid('slot',
       DATA.cooking.slice().sort((a,b) => a.name.localeCompare(b.name)).map(c => {
         const imgName = c.name.replace(/: /g, '_').replace(/ /g, '_').replace(/'/g, "'") + '.png';
-        const src = spriteSrc(imgName);
-        const el = h('div', {
-          class: 'icon-grid-item' + (state.checks[c.id] ? ' done' : ''),
-          title: `${c.name}\nSource: ${c.source || 'Unknown'}`,
-          'data-check-id': c.id,
-          on: {
-            click: () => toggleCheck(c.id),
-            contextmenu: e => { e.preventDefault(); showRecipePopover(c, 'cooking'); }
-          },
-        });
-        if (src) el.appendChild(h('img', { src, alt: c.name }));
-        else el.appendChild(h('div', { class: 'icon-fallback' }, c.name.slice(0, 4)));
-        return el;
+        return checklistTile(c, spriteSrc(imgName), c => showRecipePopover(c, 'cooking'));
       })
     )
   );
@@ -3196,46 +3157,26 @@ function renderIngredientIcons(ingredientsStr) {
 }
 
 function showRecipePopover(item, type) {
-  const existing = document.querySelector('.recipe-popover-backdrop');
-  if (existing) existing.remove();
-  const backdrop = h('div', { class: 'recipe-popover-backdrop', on: { click: () => backdrop.remove() } });
   const imgName = item.name.replace(/ /g, '_').replace(/'/g, "'") + '.png';
-  const src = spriteSrc(imgName);
-  const popover = h('div', { class: 'recipe-popover' },
-    h('div', { class: 'recipe-popover-header' },
-      src ? h('img', { src, class: 'recipe-popover-img' }) : null,
-      h('div', { class: 'recipe-popover-title' }, item.name),
-      h('button', { class: 'popover-close', on: { click: () => backdrop.remove() } }, '×')
-    ),
-    item.source ? h('div', { class: 'recipe-popover-row' }, h('span', { class: 'recipe-label' }, 'Source'), h('span', {}, item.source)) : null,
-    ITEM_TIPS[item.name] ? h('div', { class: 'popover-tip' }, ITEM_TIPS[item.name]) : null,
-    item.ingredients ? h('div', { style: 'padding: 4px 0;' }, h('div', { class: 'recipe-label', style: 'margin-bottom: 4px;' }, 'Ingredients'), renderIngredientIcons(item.ingredients)) : null,
-    h('div', { class: 'recipe-popover-row' },
-      h('a', { href: 'https://stardewvalleywiki.com/' + item.name.replace(/ /g,'_'), target: '_blank', rel: 'noopener' }, 'View on Wiki →')
-    )
-  );
-  backdrop.appendChild(popover);
-  document.body.appendChild(backdrop);
+  openPopover({
+    icon: popoverImg(spriteSrc(imgName), item.name),
+    title: item.name,
+    body: [
+      item.source ? h('div', { class: 'popover-row' }, h('span', { class: 'popover-label' }, 'Source'), h('span', {}, item.source)) : null,
+      ITEM_TIPS[item.name] ? h('div', { class: 'popover-tip' }, ITEM_TIPS[item.name]) : null,
+      item.ingredients ? h('div', { class: 'popover-section' }, h('div', { class: 'popover-label' }, 'Ingredients'), renderIngredientIcons(item.ingredients)) : null,
+    ],
+    wikiUrl: wikiUrlFor(item.name),
+  });
 }
 
 function showCounterPopover(name, hint, wikiUrl, spriteImg) {
-  const existing = document.querySelector('.recipe-popover-backdrop');
-  if (existing) existing.remove();
-  const backdrop = h('div', { class: 'recipe-popover-backdrop', on: { click: () => backdrop.remove() } });
-  const src = spriteImg ? spriteSrc(spriteImg) : null;
-  const popover = h('div', { class: 'recipe-popover' },
-    h('div', { class: 'recipe-popover-header' },
-      src ? h('img', { src, class: 'recipe-popover-img' }) : null,
-      h('div', { class: 'recipe-popover-title' }, name),
-      h('button', { class: 'popover-close', on: { click: () => backdrop.remove() } }, '×')
-    ),
-    hint ? h('div', { class: 'recipe-popover-row' }, h('span', {}, hint)) : null,
-    wikiUrl ? h('div', { class: 'recipe-popover-row' },
-      h('a', { href: wikiUrl, target: '_blank', rel: 'noopener' }, 'View on Wiki →')
-    ) : null
-  );
-  backdrop.appendChild(popover);
-  document.body.appendChild(backdrop);
+  openPopover({
+    icon: popoverImg(spriteImg ? spriteSrc(spriteImg) : null, name),
+    title: name,
+    body: hint ? h('div', { class: 'popover-tip' }, hint) : null,
+    wikiUrl,
+  });
 }
 
 // ===== CRAFTING =====
@@ -3247,22 +3188,11 @@ function renderCraftingSection() {
   for (const g of DATA.craftingGroups) {
     const done = g.items.filter(i => state.checks[i.id]).length;
     sec.appendChild(h('div', { class: 'villager-subhead' }, `${g.group}  `, h('span', { style: 'color: var(--ink-faint); font-weight: 600;' }, `${done}/${g.items.length}`)));
-    sec.appendChild(h('div', { class: 'icon-grid' },
+    sec.appendChild(tileGrid('slot',
       g.items.map(c => {
         const imgName = c.name.replace(/: /g, '_').replace(/ /g, '_').replace(/'/g, "'") + '.png';
         const src = c.sprite ? ('assets/pred/' + c.sprite) : spriteSrc(imgName);
-        const el = h('div', {
-          class: 'icon-grid-item' + (state.checks[c.id] ? ' done' : ''),
-          title: `${c.name}${c.obtain ? '\n' + c.obtain : (c.source ? '\nSource: ' + c.source : '')}`,
-          'data-check-id': c.id,
-          on: {
-            click: () => toggleCheck(c.id),
-            contextmenu: e => { e.preventDefault(); c.sprite ? showGoalPopover(c) : showRecipePopover(c, 'crafting'); }
-          },
-        });
-        if (src) el.appendChild(h('img', { src, alt: c.name }));
-        else el.appendChild(h('div', { class: 'icon-fallback' }, c.name.slice(0, 4)));
-        return el;
+        return checklistTile(c, src, c => c.sprite ? showGoalPopover(c) : showRecipePopover(c, 'crafting'));
       })
     ));
   }
@@ -3270,53 +3200,40 @@ function renderCraftingSection() {
 }
 
 function showGoalPopover(c) {
-  document.querySelectorAll('.popover-backdrop').forEach(el => el.remove());
-  const close = () => document.querySelector('.popover-backdrop')?.remove();
-  const backdrop = h('div', { class: 'popover-backdrop', on: { click: e => { if (e.target === backdrop) close(); } } });
   const isDeluxe = c.id === 'cr-deluxescarecrow';
-  const wiki = isDeluxe ? 'https://stardewvalleywiki.com/Deluxe_Scarecrow' : 'https://stardewvalleywiki.com/Scarecrow#Rarecrows';
-  const popover = h('div', { class: 'popover' },
-    h('div', { class: 'popover-head' },
-      h('div', { class: 'popover-icon' }, h('img', { src: 'assets/pred/' + c.sprite, style: 'width:100%;height:100%;object-fit:contain;image-rendering:pixelated;' })),
-      h('div', { class: 'popover-title' },
-        h('div', { class: 'popover-name' }, c.name),
-        h('div', { class: 'popover-sub' }, isDeluxe ? 'Craftable \u00b7 collect all 8 rarecrows to unlock' : 'Rarecrow \u00b7 needed for the Deluxe Scarecrow')
-      ),
-      h('button', { class: 'popover-close', on: { click: close } }, String.fromCharCode(215))
-    ),
-    isDeluxe && c.ingredients
-      ? h('div', { style: 'padding: 4px 0;' },
-          h('div', { class: 'recipe-label', style: 'margin-bottom: 4px;' }, 'Ingredients'),
+  openPopover({
+    icon: popoverImg('assets/pred/' + c.sprite, c.name),
+    title: c.name,
+    subtitle: isDeluxe ? 'Craftable \u00b7 collect all 8 rarecrows to unlock' : 'Rarecrow \u00b7 needed for the Deluxe Scarecrow',
+    body: isDeluxe && c.ingredients
+      ? h('div', { class: 'popover-section' },
+          h('div', { class: 'popover-label' }, 'Ingredients'),
           renderIngredientIcons(c.ingredients))
       : (c.obtain ? h('div', { class: 'popover-tip' }, c.obtain) : null),
-    h('div', { class: 'popover-wiki' },
-      h('a', { href: wiki, target: '_blank', rel: 'noopener' }, 'Open on Stardew Wiki \u2192'))
-  );
-  backdrop.appendChild(popover);
-  document.body.appendChild(backdrop);
+    wikiUrl: isDeluxe ? 'https://stardewvalleywiki.com/Deluxe_Scarecrow' : 'https://stardewvalleywiki.com/Scarecrow#Rarecrows',
+  });
 }
 function deluxeTile(c) {
-  const el = h('div', {
-    class: 'icon-grid-item' + (state.checks[c.id] ? ' done' : ''),
-    title: `${c.name}${c.obtain ? '\n' + c.obtain : (c.ingredients ? '\nRecipe: ' + c.ingredients : '')}`,
-    'data-check-id': c.id,
-    on: { click: () => toggleCheck(c.id), contextmenu: e => { e.preventDefault(); showGoalPopover(c); } }
-  });
   const src = c.sprite ? ('assets/pred/' + c.sprite) : spriteSrc(c.name.replace(/ /g, '_') + '.png');
-  if (src) el.appendChild(h('img', { src, alt: c.name }));
-  else el.appendChild(h('div', { class: 'icon-fallback' }, c.name.slice(0, 4)));
-  return el;
+  return tile('standard', {
+    checkId: c.id,
+    done: !!state.checks[c.id],
+    title: c.name + (c.obtain ? '\n' + c.obtain : c.ingredients ? '\nRecipe: ' + c.ingredients : ''),
+    sprite: src ? h('img', { src, alt: c.name }) : h('div', { class: 'tile-img-fallback' }, c.name.slice(0, 4)),
+    onClick: () => toggleCheck(c.id),
+    onContext: () => showGoalPopover(c),
+  });
 }
 function renderDeluxeScarecrowPanel() {
   const items = DATA.craftingGroups.find(g => g.group === 'Deluxe Scarecrow')?.items || [];
   const done = items.filter(i => state.checks[i.id]).length;
   return h('div', { class: 'panel panel-always' },
     h('div', { class: 'panel-head' },
-      h('span', { class: 'panel-icon' }, h('img', { src: 'assets/pred/deluxe_scarecrow.png', style: 'width:20px;height:20px;image-rendering:pixelated;' })),
+      h('span', { class: 'panel-icon' }, h('img', { src: 'assets/pred/deluxe_scarecrow.png', style: 'width:20px;height:20px;object-fit:contain;image-rendering:pixelated;' })),
       h('div', { class: 'panel-title' }, 'Deluxe Scarecrow', h('span', { class: 'now-sub-note' }, 'recipe + 8 rarecrows')),
       h('div', { class: 'panel-count' }, `${done} / ${items.length}`)
     ),
-    h('div', { class: 'icon-grid' }, items.map(deluxeTile))
+    tileGrid('standard', items.map(deluxeTile))
   );
 }
 function renderFooter() {

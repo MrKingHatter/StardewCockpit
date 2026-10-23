@@ -5,11 +5,6 @@ built-in **1.6 travelling-cart & shop predictor**. Pure static HTML/CSS/JS — n
 build step, no framework, no backend. State is saved in the browser via
 `localStorage`.
 
-## TODO
-
-Y1 Guarantee prediction is broken for switch.
-Switch, Seed: 450982496, predicted: 1xRed Cabbage seeds Fall 12 Y1, actual: 5xRed Cabbage seeds Fall 7 Y1
-
 ## Project structure
 
 ```
@@ -18,12 +13,14 @@ css/
   styles.css            All styles (theme variables + layout)
 js/
   data.js               Game data (items, bundles, villagers, festivals, …)
-  images.js             Inline base64 sprite map (IMAGES)
+  images-0.js … 11.js   Inline base64 sprite map (global IMAGES), split into
+                        chunks to avoid an antivirus false-positive on the blob
   predictor-data.js     AUTO-GENERATED cart/shop data tables (see tools/)
   predictor.js          1.6 predictor: PRNGs, xxHash32 seeds, cart & shops, search
   app.js                App state, rendering, calendar, predictor UI
 tools/
   gen-predictor-data.mjs  Regenerates js/predictor-data.js from the oshawk assets
+  split-images.mjs        Regenerates js/images-*.js chunks from the sprite blob
   setup-assets.ps1        Copies sprite sheets & downloads shop icons
   fetch-pred-sprites.ps1  Downloads wiki sprites for named cart specials
   fetch-rarecrows.ps1     Downloads the 8 rarecrow sprites

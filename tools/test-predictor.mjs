@@ -14,6 +14,8 @@ R.sandy3 = Predictor.sandyShirt('PC',123456789,3).id;
 R.sandy5 = Predictor.sandyShirt('PC',123456789,5).id;
 R.pierre3 = Predictor.pierreWallFloor('PC',123456789,3);
 R.joja3 = Predictor.jojaWallFloor('PC',123456789,3);
+R.y1Qty = Predictor.cartDay('Switch', 450982496, 63).filter(l => l.name === 'Red Cabbage Seeds').map(l => l.qtyNum);
+R.y1Off = Predictor.cartDay('Switch', 450982496, 68).some(l => l.name === 'Red Cabbage Seeds');
 globalThis.__R = R;
 `;
 
@@ -49,6 +51,8 @@ check('sandy dp3 id', R.sandy3, 1096);
 check('sandy dp5 id', R.sandy5, 1006);
 check('pierre dp3', R.pierre3, { wallpaper: 96, flooring: 20 });
 check('joja dp3', R.joja3, { wallpaper: 96, flooring: 20 });
+check('Y1 guarantee Switch 450982496 Fall 7 (dp63) = 5x Red Cabbage Seeds', R.y1Qty, [5]);
+check('Y1 guarantee NOT on Fall 12 (dp68)', R.y1Off, false);
 
 console.log(pass ? '\nALL GOLDEN VECTORS PASS' : '\nSOME VECTORS FAILED');
 process.exit(pass ? 0 : 1);

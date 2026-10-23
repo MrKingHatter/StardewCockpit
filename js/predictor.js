@@ -354,8 +354,9 @@
   function isCartDay(dp) { return isRegularCartDay(dp) || isFestivalCartDay(dp); }
 
   function originalGuarantee(platform, uid) {
-    const seed = (12 * uid) | 0;
-    return getPrng(platform, seed).nextMinMax(2, 31);
+    // VisitsUntilY1Guarantee is rolled at save creation via Utility.CreateRandom(12 * uniqueID),
+    // i.e. CreateRandomSeed(12*uid) (xxHash) — not a raw `new Random(12*uid)`.
+    return getPrng(platform, createRandomSeed(12 * uid, 0, 0, 0, 0)).nextMinMax(2, 31);
   }
   function visitsNow(dp, original) {
     let v = original - Math.floor(dp / 7) - Math.floor((dp + 2) / 7);
