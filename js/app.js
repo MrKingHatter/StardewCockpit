@@ -26,6 +26,8 @@ const state = (() => {
       // For Missing Bundle items not in ITEMS, use s.mbChannels keyed by slot index
       s.mbChecks   ??= {};
       s.bundleSlots ??= {};
+      // Local-only heart event tracker (does NOT count toward perfection/CC)
+      s.heChecks   ??= {};
       // Migrate: if old cc channels exist but no bundleSlots, seed bundleSlots from cc
       if (Object.keys(s.bundleSlots).length === 0 && Object.keys(s.channels).length > 0) {
         for (const b of DATA.bundles) {
@@ -50,6 +52,7 @@ const state = (() => {
     openTile: null,
     mbChecks: {},
     bundleSlots: {},
+    heChecks: {},
   };
 })();
 
@@ -2015,14 +2018,34 @@ function villagerHeartEvents(v) {
   const evs = (DATA.heartEvents && DATA.heartEvents[v.id]) || [];
   if (!evs.length) return null;
   return h('div', { class: 'popover-section' },
-    h('div', { class: 'popover-label' }, 'Heart Events'),
+    h('div', { class: 'popover-label' }, 'Heart Events',
+      h('span', { class: 'he-note' }, 'personal tracker')),
     h('div', { class: 'heart-events' },
-      ...evs.map(e => h('div', { class: 'heart-event' },
-        h('span', { class: 'he-hearts' }, e.h + '\u2665'),
-        h('span', { class: 'he-cond' }, e.c)
-      ))
+      ...evs.map((e, idx) => {
+        const key = v.id + '#' + idx;
+        const done = !!state.heChecks[key];
+        return h('div', { class: 'heart-event he-check' + (done ? ' done' : ''), role: 'button', tabindex: '0',
+          title: done ? 'Seen — click to clear' : 'Click to mark as seen',
+          on: {
+            click: ev => toggleHeartEvent(key, ev.currentTarget),
+            keydown: ev => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); toggleHeartEvent(key, ev.currentTarget); } }
+          } },
+          h('span', { class: 'he-box' }),
+          h('span', { class: 'he-hearts' }, e.h + '\u2665'),
+          h('span', { class: 'he-cond' }, e.c)
+        );
+      })
     )
   );
+}
+function toggleHeartEvent(key, rowEl) {
+  if (state.heChecks[key]) delete state.heChecks[key]; else state.heChecks[key] = true;
+  save();
+  if (rowEl) {
+    const done = !!state.heChecks[key];
+    rowEl.classList.toggle('done', done);
+    rowEl.title = done ? 'Seen — click to clear' : 'Click to mark as seen';
+  }
 }
 function showVillagerPopover(v) {
   openPopover({

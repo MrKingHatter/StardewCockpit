@@ -434,6 +434,14 @@ body.mode-cc .season-tab.active .pct { color: var(--accent); }
 .heart-event { display: flex; gap: 8px; align-items: baseline; font-size: 12px; line-height: 1.35; }
 .he-hearts { flex-shrink: 0; min-width: 30px; font-weight: 800; color: var(--heart); font-variant-numeric: tabular-nums; }
 .he-cond { color: var(--ink-soft); }
+.he-note { margin-left: 6px; font-size: 9px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: var(--ink-faint); }
+.heart-event.he-check { align-items: center; padding: 3px 6px; border: 1px solid transparent; border-radius: var(--radius-sm); cursor: pointer; transition: background .12s, border-color .12s; }
+.heart-event.he-check:hover { background: var(--bg-soft); border-color: var(--line-soft); }
+.he-box { width: 15px; height: 15px; border: 2px solid var(--line); border-radius: 4px; background: var(--bg-elev); position: relative; flex-shrink: 0; align-self: center; }
+.heart-event.he-check.done .he-box { background: var(--done); border-color: var(--done); }
+.heart-event.he-check.done .he-box::after { content: ''; position: absolute; left: 3px; top: 0; width: 4px; height: 8px; border: solid white; border-width: 0 2px 2px 0; transform: rotate(45deg); }
+.heart-event.he-check.done .he-cond { text-decoration: line-through; color: var(--ink-faint); }
+.heart-event.he-check.done .he-hearts { opacity: 0.55; }
 .popover-channels { display: flex; flex-direction: column; gap: 8px; }
 .channel { display: flex; align-items: center; gap: 10px; padding: 10px 12px; background: var(--bg-soft); border: 1px solid var(--line-soft); border-radius: var(--radius-sm); cursor: pointer; transition: all .12s; }
 .channel:not(.disabled):hover { background: var(--bg-elev); }
