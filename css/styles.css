@@ -427,6 +427,10 @@ body.mode-cc .season-tab.active .pct { color: var(--accent); }
 .popover-meta-row { display: flex; gap: 6px; }
 .popover-meta-label { font-weight: 700; min-width: 60px; color: var(--ink-faint); text-transform: uppercase; font-size: 10px; letter-spacing: 0.05em; }
 .popover-tip { font-size: 12px; color: var(--ink-soft); background: var(--bg-soft); padding: 8px 10px; border-radius: var(--radius-sm); border-left: 3px solid var(--primary); line-height: 1.4; }
+.heart-events { display: flex; flex-direction: column; gap: 3px; }
+.heart-event { display: flex; gap: 8px; align-items: baseline; font-size: 12px; line-height: 1.35; }
+.he-hearts { flex-shrink: 0; min-width: 30px; font-weight: 800; color: var(--heart); font-variant-numeric: tabular-nums; }
+.he-cond { color: var(--ink-soft); }
 .popover-channels { display: flex; flex-direction: column; gap: 8px; }
 .channel { display: flex; align-items: center; gap: 10px; padding: 10px 12px; background: var(--bg-soft); border: 1px solid var(--line-soft); border-radius: var(--radius-sm); cursor: pointer; transition: all .12s; }
 .channel:not(.disabled):hover { background: var(--bg-elev); }

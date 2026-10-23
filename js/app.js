@@ -2011,6 +2011,19 @@ function villagerGiftChips(gifts, liked) {
     })
   );
 }
+function villagerHeartEvents(v) {
+  const evs = (DATA.heartEvents && DATA.heartEvents[v.id]) || [];
+  if (!evs.length) return null;
+  return h('div', { class: 'popover-section' },
+    h('div', { class: 'popover-label' }, 'Heart Events'),
+    h('div', { class: 'heart-events' },
+      ...evs.map(e => h('div', { class: 'heart-event' },
+        h('span', { class: 'he-hearts' }, e.h + '\u2665'),
+        h('span', { class: 'he-cond' }, e.c)
+      ))
+    )
+  );
+}
 function showVillagerPopover(v) {
   openPopover({
     icon: popoverImg(PORTRAIT(v), v.name) || h('div', { class: 'popover-icon-fallback' }, v.name.slice(0, 2)),
@@ -2023,6 +2036,7 @@ function showVillagerPopover(v) {
       (v.liked && v.liked.length) ? h('div', { class: 'popover-section' },
         h('div', { class: 'popover-label' }, 'Liked Gifts'),
         villagerGiftChips(v.liked, true)) : null,
+      villagerHeartEvents(v),
       v.note ? h('div', { class: 'popover-tip' }, v.note) : null,
     ],
     wikiUrl: wikiUrlFor(v.name),
