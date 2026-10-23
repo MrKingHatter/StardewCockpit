@@ -326,6 +326,9 @@ body.mode-cc .season-tab.active .pct { color: var(--accent); }
 .tile.done:hover { opacity: 1; }
 .tile.weather-sunny { border-color: var(--sunny); }
 .tile.weather-rainy { border-color: var(--rain); }
+/* At-a-glance weather tint for sun-/rain-exclusive fish (done tiles keep the faded look). */
+.tile.weather-sunny:not(.done) { background: var(--sunny-light); box-shadow: inset 0 0 0 1.5px var(--sunny); }
+.tile.weather-rainy:not(.done) { background: var(--rain-light); box-shadow: inset 0 0 0 1.5px var(--rain); }
 .tile.legendary { box-shadow: 0 0 0 2px var(--gold-light); border-color: var(--gold); }
 .tile-compact { width: 28px; height: 28px; }
 .tile-slot { max-width: 56px; }
